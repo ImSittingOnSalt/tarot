@@ -81,6 +81,7 @@ def on_click(message):
     feedback(message)
   else:
     bot.reply_to(message, '<em>Пожалуйста, воспользуйтесь меню для выбора команды</em>', parse_mode='html')
+    bot.register_next_step_handler(message, on_click)
   
 @bot.message_handler(commands=['decks'])#
 def decks(message):
@@ -199,9 +200,9 @@ def callback_message(callback):
             ('Король', f'{prefix}_king_{card_type}')
         ]
         
-        # Разбиваем на строки по 3 кнопки
-        for i in range(0, len(cards), 3):
-            row = cards[i:i+3]
+        # Разбиваем на строки по 4 кнопки
+        for i in range(0, len(cards), 4):
+            row = cards[i:i+4]
             markup.row(*[types.InlineKeyboardButton(text, callback_data=cb) for text, cb in row])
         
         # Получаем русское название масти
@@ -295,7 +296,26 @@ def send_card_info(chat_id, card):
 
 @bot.message_handler(commands=['spreads'])#
 def spreads(message):
-  bot.send_message(message.chat.id, 'spreads')
+  markup = types.InlineKeyboardMarkup(row_width=2)
+  
+  buttons = [
+      ('Расклад Карта Дня', 'sp_day'),
+      ('Расклад Три карты', 'sp_three'),
+      ('Расклад на отношения', 'sp_rel'),
+      ('Расклад Кельтский Крест', 'sp_kel'),
+      ('Расклад Выбор', 'sp_choice'),
+      ('Расклад Полнолуние', 'sp_moon'),
+      ('Расклад Совет от Таро', 'sp_advice'),
+      ('Справочник таролога 1', 'directory1'),
+      ('Справочник таролога 2', 'directory2')
+  ]
+  
+  # Разбиваем на строки по 2 кнопки
+  for i in range(0, len(buttons), 2):
+      row = buttons[i:i+2]
+      markup.row(*[types.InlineKeyboardButton(text, callback_data=cb) for text, cb in row])
+
+  bot.send_message(message.chat.id, 'spreads', reply_markup=markup)
 
 @bot.message_handler(commands=['custom_spread'])#
 def custom_spread(message):
@@ -339,55 +359,47 @@ def help(message):
   ) 
   bot.send_message(message.chat.id, help_text, parse_mode='html')
 
-@bot.message_handler(commands=['feedback']) #подробнее потестить ответы
+@bot.message_handler(commands=['feedback']) # подробнее потестить ответы(от других людей? мб дело в том, что я сама пишу отзывы и они мне же приходят)
 def feedback(message):
-  conn = sqlite3.connect(FEEDBACK_DB)
+  conn = sqlite3.connect('feedback.sqlite3')
   cursor = conn.cursor()
   
-  try:
-    cursor.execute("SELECT created_at FROM feedback WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (message.from_user.id,))
-    last_feedback = cursor.fetchone() # Проверка ограничения (1 отзыв в час)
-    
-    if last_feedback and (datetime.now() - datetime.strptime(last_feedback[0], '%Y-%m-%d %H:%M:%S')) < timedelta(hours=1):
-      bot.send_message(message.chat.id, "⏳ Вы уже отправляли отзыв недавно. Пожалуйста, попробуйте позже.")
-      return
-    
-    msg = bot.send_message(message.chat.id, "💬 Пожалуйста, напишите ваш отзыв или предложение:")
-    bot.register_next_step_handler(msg, lambda m: process_feedback(m, conn))
-  except Exception as e:
-    bot.send_message(message.chat.id, "❌ Произошла ошибка. Попробуйте позже.")
-    print(f"Error in feedback handler: {e}")
-    conn.close()
-
-def process_feedback(message, conn):
-  try:
-    cursor = conn.cursor()
+  # Проверка ограничения (1 отзыв в час)
+  #cursor.execute("SELECT created_at FROM feedback WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (message.from_user.id,))
+  #last_feedback = cursor.fetchone()
+  #if last_feedback and (datetime.now() - datetime.strptime(last_feedback[0], '%Y-%m-%d %H:%M:%S')) < timedelta(hours=1):
+  #  bot.send_message(message.chat.id, "⏳ Вы уже отправляли отзыв недавно. Пожалуйста, попробуйте позже.")
+  #  conn.close()
+  #  bot.register_next_step_handler(message, on_click) # После отправки сообщения о лимите, регистрируем обработчик для продолжения работы
+  #  return
   
-    # Сохраняем в БД
-    cursor.execute("INSERT INTO feedback (user_id, username, text, created_at) VALUES (?, ?, ?, ?)",
-                  (message.from_user.id, message.from_user.username, message.text, 
-                  datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-    conn.commit()
-    feedback_id = cursor.lastrowid
-    
-    # Отправляем админу
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✍️ Ответить", callback_data=f"reply_{feedback_id}"))
-    
-    feedback_text = (
-      f"📩 <b>Новый отзыв</b> (#{feedback_id})\n\n"
-      f"👤 <b>Пользователь:</b> @{message.from_user.username} (<code>{message.from_user.id}</code>)\n"
-      f"🕒 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-      f"📝 <b>Сообщение:</b>\n<code>{message.text}</code>"
-    )
-    bot.send_message(ADMIN_CHAT_ID, feedback_text, parse_mode="HTML", reply_markup=markup)
-    
-    bot.send_message(message.chat.id, "✅ Спасибо! Ваш отзыв отправлен администратору.")
-  except Exception as e:
-    bot.send_message(message.chat.id, "❌ Произошла ошибка при обработке отзыва.")
-    print(f"Error processing feedback: {e}")
-  finally:
-    conn.close()
+  msg = bot.send_message(message.chat.id, "💬 Пожалуйста, напишите ваш отзыв или предложение:")
+  msg.is_feedback = True # Помечаем сообщение как часть процесса фидбэка
+  bot.register_next_step_handler(msg, process_feedback)
+
+def process_feedback(message):
+  conn = sqlite3.connect('feedback.sqlite3')
+  cursor = conn.cursor()
+  message.is_feedback = True # Помечаем сообщение как часть процесса фидбэка
+  
+  cursor.execute("INSERT INTO feedback (user_id, username, text, created_at) VALUES (?, ?, ?, ?)",
+                (message.from_user.id, message.from_user.username, message.text, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+  conn.commit() # Сохраняем в БД
+  feedback_id = cursor.lastrowid
+  
+  markup = types.InlineKeyboardMarkup()
+  markup.add(types.InlineKeyboardButton("✍️ Ответить", callback_data=f"reply_{feedback_id}"))
+  
+  feedback_text = (
+    f"📩 <b>Новый отзыв</b> (#{feedback_id})\n\n"
+    f"👤 <b>Пользователь:</b> @{message.from_user.username} (<code>{message.from_user.id}</code>)\n"
+    f"🕒 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+    f"📝 <b>Сообщение:</b>\n<code>{message.text}</code>"
+  )
+  bot.send_message(ADMIN_CHAT_ID, feedback_text, parse_mode="HTML", reply_markup=markup)
+  
+  bot.send_message(message.chat.id, "✅ Спасибо! Ваш отзыв отправлен администратору.")
+  conn.close()
   bot.register_next_step_handler(message, on_click)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('reply_')) # Обработка ответа админа
